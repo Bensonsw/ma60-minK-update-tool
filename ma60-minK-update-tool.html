@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ma60-minK-update-tool</title>
+<meta name="description" content="互動式股票攤平計算器：輸入多筆買入紀錄，模擬加碼後均價變化、損益兩平點、目標均價所需股數，並顯示不同賣價下的預期損益與成本趨勢圖。" />
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=cabinet-grotesk@500,700&display=swap" rel="stylesheet" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2301624f'/%3E%3Cpath d='M7 20l5-6 4 3 7-9' fill='none' stroke='%234fd0c5' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M20 8h3v3' fill='none' stroke='%234fd0c5' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./base.css" />
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主內容</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="7" fill="currentColor"/>
+          <path d="M7 20l5-6 4 3 7-9" fill="none" stroke="var(--color-accent-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M20 8h3v3" fill="none" stroke="var(--color-accent-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <h1>股票攤平計算器</h1>
+        <p class="brand-sub">持倉成本 · 加碼策略 · 損益模擬</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="btn-export" type="button" data-testid="button-export">匯出方案</button>
+      <button class="btn btn-ghost" id="btn-import" type="button" data-testid="button-import">匯入方案</button>
+      <button class="btn btn-ghost" id="btn-reset" type="button" data-testid="button-reset">清空</button>
+      <button class="icon-btn" id="theme-toggle" type="button" data-theme-toggle aria-label="切換到淺色模式" data-testid="button-theme">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="layout">
+
+  <section class="panel kpi-strip" aria-label="持倉摘要">
+    <div class="kpi">
+      <span class="kpi-label">總股數</span>
+      <span class="kpi-value" id="kpi-shares" data-testid="text-kpi-shares">0</span>
+      <span class="kpi-unit">股</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">總成本</span>
+      <span class="kpi-value" id="kpi-cost" data-testid="text-kpi-cost">0</span>
+      <span class="kpi-unit">元</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">目前均價</span>
+      <span class="kpi-value" id="kpi-avg" data-testid="text-kpi-avg">0.00</span>
+      <span class="kpi-unit">元/股</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">未實現損益</span>
+      <span class="kpi-value" id="kpi-pnl" data-testid="text-kpi-pnl">0</span>
+      <span class="kpi-unit" id="kpi-pnl-pct">0.0%</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">已實現損益</span>
+      <span class="kpi-value" id="kpi-realized" data-testid="text-kpi-realized">0</span>
+      <span class="kpi-unit">元</span>
+    </div>
+  </section>
+
+  <div class="grid-2">
+
+    <section class="panel card" aria-label="買賣紀錄">
+      <div class="card-head">
+        <h2>買賣紀錄</h2>
+        <span class="hint">每筆可選「買進」或「賣出」，賣出會自動計算實現損益並調整持倉成本</span>
+      </div>
+      <div class="table-wrap">
+        <table class="record-table" id="record-table">
+          <thead>
+            <tr>
+              <th scope="col" class="col-idx">#</th>
+              <th scope="col" class="col-type">類別</th>
+              <th scope="col">股數</th>
+              <th scope="col">價格</th>
+              <th scope="col">單筆金額</th>
+              <th scope="col">實現損益</th>
+              <th scope="col" class="col-act">操作</th>
+            </tr>
+          </thead>
+          <tbody id="record-body"></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" class="foot-label">合計（剩餘持倉成本／累計實現損益）</td>
+              <td class="num" id="foot-total" data-testid="text-foot-total">0</td>
+              <td class="num" id="foot-realized" data-testid="text-foot-realized">0</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button class="btn btn-secondary btn-add" id="btn-add-row" type="button" data-testid="button-add-row">＋ 新增交易</button>
+    </section>
+
+    <section class="panel card" aria-label="費用與市價設定">
+      <div class="card-head"><h2>費用與市價</h2></div>
+      <div class="form-grid">
+        <label class="field">
+          <span>買進手續費率</span>
+          <input type="number" id="in-fee-buy" value="0.001425" step="0.0001" min="0" data-testid="input-fee-buy" />
+          <small class="field-hint">台股預設 0.1425%</small>
+        </label>
+        <label class="field">
+          <span>賣出手續費率</span>
+          <input type="number" id="in-fee-sell" value="0.001425" step="0.0001" min="0" data-testid="input-fee-sell" />
+          <small class="field-hint">台股預設 0.1425%</small>
+        </label>
+        <label class="field">
+          <span>證券交易稅率</span>
+          <input type="number" id="in-tax" value="0.003" step="0.0001" min="0" data-testid="input-tax" />
+          <small class="field-hint">台股 0.3%（出售時）</small>
+        </label>
+        <label class="field">
+          <span>手續費折扣</span>
+          <input type="number" id="in-fee-discount" value="0.6" step="0.05" min="0" max="1" data-testid="input-fee-discount" />
+          <small class="field-hint">電子下單折扣（0.6 = 6 折）</small>
+        </label>
+        <label class="field field-wide">
+          <span>目前市價（元/股）</span>
+          <input type="number" id="in-price-now" value="40" step="0.01" min="0" data-testid="input-price-now" />
+          <small class="field-hint">用於計算未實現損益與攤平試算</small>
+        </label>
+        <label class="field field-wide">
+          <span>成本均價（元/股）</span>
+          <input type="number" id="in-cost-avg" value="0" step="0.01" min="0" data-testid="input-cost-avg" />
+          <small class="field-hint">目前持倉的總成本平均價（可手動調整）</small>
+        </label>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel card" aria-label="加碼模擬器">
+    <div class="card-head">
+      <h2>加碼模擬器</h2>
+      <span class="hint">模擬在特定價格加碼後的整體均價變化</span>
+    </div>
+    <div class="form-grid form-4">
+      <label class="field">
+        <span>加碼價格（元/股）</span>
+        <input type="number" id="in-add-price" value="0" step="0.01" min="0" data-testid="input-add-price" />
+      </label>
+      <label class="field">
+        <span>加碼股數</span>
+        <input type="number" id="in-add-shares" value="0" step="1" min="0" data-testid="input-add-shares" />
+      </label>
+      <div class="result-box">
+        <span class="result-label">加碼後均價</span>
+        <span class="result-value" id="out-new-avg" data-testid="text-new-avg">—</span>
+        <span class="result-sub" id="out-new-avg-delta"></span>
+      </div>
+      <div class="result-box">
+        <span class="result-label">加碼後總成本</span>
+        <span class="result-value" id="out-new-cost" data-testid="text-new-cost">—</span>
+        <span class="result-sub" id="out-new-cost-delta"></span>
+      </div>
+    </div>
+
+    <div class="flat-head">
+      <h3>攤平試算</h3>
+      <span class="hint">估算把虧損攤平至損益兩平所需的買入價格或股數（簡化估算，未含手續費與交易稅）</span>
+      <button class="btn btn-ghost btn-sm" id="btn-flat-sync" type="button" data-testid="button-flat-sync">帶入目前持倉虧損與市價</button>
+    </div>
+
+    <div class="target-row">
+      <div class="target-block">
+        <h4>（一）加碼後均價與損益</h4>
+        <p class="block-hint">輸入虧損金額、預計買入股價與預計買入股數，估算加碼後的成本均價與未實現損益（損益以「費用與市價」欄位的目前市價計算）。</p>
+        <div class="form-grid form-3">
+          <label class="field">
+            <span>虧損金額（元）</span>
+            <input type="number" id="in-flat1-loss" value="0" step="100" min="0" data-testid="input-flat1-loss" />
+          </label>
+          <label class="field">
+            <span>預計買入股價（元/股）</span>
+            <input type="number" id="in-flat1-price" value="0" step="0.01" min="0" data-testid="input-flat1-price" />
+          </label>
+          <label class="field">
+            <span>預計買入股數</span>
+            <input type="number" id="in-flat1-shares" value="0" step="1" min="0" data-testid="input-flat1-shares" />
+          </label>
+        </div>
+        <div class="result-box result-large">
+          <span class="result-label">加碼後成本均價</span>
+          <span class="result-value" id="out-flat1-avg" data-testid="text-flat1-avg">—</span>
+          <span class="result-sub" id="out-flat1-avg-note"></span>
+        </div>
+        <div class="result-box result-large">
+          <span class="result-label">加碼後未實現損益</span>
+          <span class="result-value" id="out-flat1-pnl" data-testid="text-flat1-pnl">—</span>
+          <span class="result-sub" id="out-flat1-pnl-note"></span>
+        </div>
+      </div>
+
+      <div class="target-block">
+        <h4>（二）估算應買股數</h4>
+        <p class="block-hint">輸入虧損金額、目前市價與預計買入價格，帶出能攤平至損益兩平的應買股數。</p>
+        <div class="form-grid form-3">
+          <label class="field">
+            <span>虧損金額（元）</span>
+            <input type="number" id="in-flat2-loss" value="0" step="100" min="0" data-testid="input-flat2-loss" />
+          </label>
+          <label class="field">
+            <span>目前市價（元/股）</span>
+            <input type="number" id="in-flat2-price" value="0" step="0.01" min="0" data-testid="input-flat2-price" />
+          </label>
+          <label class="field">
+            <span>預計買入價格（元/股）</span>
+            <input type="number" id="in-flat2-buyprice" value="0" step="0.01" min="0" data-testid="input-flat2-buyprice" />
+          </label>
+        </div>
+        <div class="result-box result-large">
+          <span class="result-label">應買股數</span>
+          <span class="result-value" id="out-flat2-shares" data-testid="text-flat2-shares">—</span>
+          <span class="result-sub" id="out-flat2-shares-note"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="breakeven-section">
+      <div class="target-block">
+        <h3>損益兩平點</h3>
+        <p class="block-hint">含手續費與交易稅後，賣出多少價格才不虧損。</p>
+        <div class="breakeven-grid">
+          <div class="result-box result-large">
+            <span class="result-label">損益兩平賣價</span>
+            <span class="result-value" id="out-breakeven" data-testid="text-breakeven">—</span>
+            <span class="result-sub" id="out-breakeven-note"></span>
+          </div>
+          <div class="result-box">
+            <span class="result-label">距目前市價</span>
+            <span class="result-value" id="out-breakeven-gap" data-testid="text-breakeven-gap">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-label="賣出價格損益模擬">
+    <div class="card-head">
+      <h2>不同賣價損益模擬</h2>
+      <span class="hint">列出多個賣出價格下的預期損益（已扣除手續費與交易稅）</span>
+    </div>
+    <div class="table-wrap">
+      <table class="pnl-table" id="pnl-table">
+        <thead>
+          <tr>
+            <th scope="col">賣出價格</th>
+            <th scope="col">賣出總收入</th>
+            <th scope="col">損益</th>
+            <th scope="col">報酬率</th>
+          </tr>
+        </thead>
+        <tbody id="pnl-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="charts-grid" aria-label="視覺化摘要">
+    <div class="panel card chart-card">
+      <div class="card-head"><h2>均價趨勢圖</h2><span class="hint">每加一筆買入後的平均成本變化</span></div>
+      <div class="chart-box"><canvas id="chart-avg" role="img" aria-label="平均成本趨勢圖"></canvas></div>
+    </div>
+    <div class="panel card chart-card">
+      <div class="card-head"><h2>總成本與總股數</h2><span class="hint">累積成本與股數成長</span></div>
+      <div class="chart-box"><canvas id="chart-cum" role="img" aria-label="累積成本與股數圖"></canvas></div>
+    </div>
+    <div class="panel card chart-card chart-wide">
+      <div class="card-head"><h2>不同賣價損益圖</h2><span class="hint">橫軸為賣出價格，縱軸為損益金額</span></div>
+      <div class="chart-box"><canvas id="chart-pnl" role="img" aria-label="賣價損益圖"></canvas></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>本工具僅供試算參考，未考慮股利、零股交易最低手續費（20 元）等細節。投資請自行評估風險。</p>
+</footer>
+
+<!-- 匯出/匯入對話框 -->
+<div class="modal" id="modal-io" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h3 id="modal-title">匯出方案</h3>
+      <button class="icon-btn" data-close aria-label="關閉">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-hint" id="modal-hint">複製下方文字備份；下次貼回即可匯入續算。</p>
+      <textarea id="modal-textarea" rows="10" data-testid="input-modal-text"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="btn-copy" type="button" data-testid="button-copy">複製</button>
+      <button class="btn btn-primary" id="btn-load" type="button" data-testid="button-load">載入</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="./app.js"></script>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
+</html>
